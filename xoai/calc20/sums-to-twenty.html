@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sums to Twenty</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@500;700;800&display=swap">
+<style>
+/* Layout: one-screen practice board. Slim header with progress beads, the sum in the middle,
+   big answer tiles below. Teacher settings live in a bottom sheet behind a press-and-hold gear.
+   Single bright classroom look by choice (same in light and dark hosts). */
+:root {
+  color-scheme: light;
+  --paper: #EEF3FA;
+  --card: #FFFFFF;
+  --ink: #1E2842;
+  --muted: #5B6683;
+  --line: #D6DEEB;
+  --coral: #EE6145;   /* first number, ten-frame dots */
+  --teal: #179C93;    /* second number */
+  --sun: #FFC23D;     /* stars, highlights */
+  --good: #23935A;
+  --good-bg: #DCF2E4;
+  --bad: #CF4040;
+  --bad-bg: #FBE2DF;
+  --display: "Baloo 2", "Arial Rounded MT Bold", "Trebuchet MS", system-ui, sans-serif;
+  --body: "Nunito", "Avenir Next", system-ui, -apple-system, sans-serif;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font-family: var(--body); font-size: 18px;
+  display: flex; flex-direction: column;
+  padding-inline: max(16px, env(safe-area-inset-left, 0px));
+  touch-action: manipulation; user-select: none; -webkit-user-select: none;
+  overflow: hidden;
+}
+button { font: inherit; color: inherit; touch-action: manipulation; cursor: pointer; }
+button:focus-visible { outline: 3px solid var(--teal); outline-offset: 3px; }
+
+/* ---------- header ---------- */
+header {
+  display: flex; align-items: center; gap: 16px;
+  padding-block: 14px 6px; max-width: 980px; width: 100%; margin-inline: auto;
+}
+.brand { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.brand b { font-family: var(--display); font-weight: 800; font-size: 22px; line-height: 1.1; }
+.brand span { color: var(--muted); font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gear {
+  position: relative; width: 56px; height: 56px; border-radius: 50%;
+  border: 2px solid var(--line); background: var(--card); flex: none;
+  display: grid; place-items: center;
+}
+.gear svg.cog { width: 26px; height: 26px; fill: var(--muted); }
+.gear svg.ring { position: absolute; inset: -2px; width: 56px; height: 56px; transform: rotate(-90deg); pointer-events: none; }
+.gear svg.ring circle { fill: none; stroke: var(--teal); stroke-width: 4; stroke-dasharray: 163; stroke-dashoffset: 163; }
+.gear.holding svg.ring circle { transition: stroke-dashoffset .9s linear; stroke-dashoffset: 0; }
+.gear-tip { position: absolute; right: 0; top: 62px; background: var(--ink); color: #fff; font-size: 14px; font-weight: 700;
+  padding: 6px 10px; border-radius: 8px; white-space: nowrap; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 5; }
+.gear-tip.show { opacity: 1; }
+
+.beads { display: flex; gap: 6px; flex-wrap: wrap; max-width: 980px; width: 100%; margin-inline: auto; padding-block: 6px; }
+.bead { width: 18px; height: 18px; border-radius: 50%; background: var(--card); border: 2px solid var(--line); }
+.bead.now { border-color: var(--ink); }
+.bead.ok { background: var(--good); border-color: var(--good); }
+.bead.retry { background: var(--sun); border-color: var(--sun); }
+
+/* ---------- practice board ---------- */
+main { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: clamp(16px, 3.5vh, 36px); padding-block: 8px 24px; }
+.count { color: var(--muted); font-weight: 800; font-size: 16px; letter-spacing: .06em; text-transform: uppercase; }
+.sum {
+  font-family: var(--display); font-weight: 800; line-height: 1;
+  font-size: clamp(64px, 13vw, 148px); display: flex; align-items: center; gap: .22em;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.sum .n1 { color: var(--coral); }
+.sum .n2 { color: var(--teal); }
+.sum .op { color: var(--muted); font-weight: 700; }
+.slot {
+  min-width: 1.35em; height: 1.15em; padding-inline: .1em; border-radius: .18em;
+  border: .05em dashed var(--muted); display: grid; place-items: center; color: var(--muted);
+  padding-top: .08em;
+}
+.slot.filled { border: .05em solid var(--good); background: var(--good-bg); color: var(--good); animation: pop .35s ease; }
+
+.choices { display: grid; gap: clamp(12px, 2vw, 22px); width: min(100%, 760px); }
+.choices.c4 { grid-template-columns: repeat(4, 1fr); }
+.choices.c3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 700px) { .choices.c4 { grid-template-columns: repeat(2, 1fr); } }
+.choice {
+  height: clamp(96px, 16vh, 150px); border-radius: 26px; background: var(--card);
+  border: 3px solid var(--line); box-shadow: 0 6px 0 var(--line);
+  font-family: var(--display); font-weight: 800; font-size: clamp(48px, 8vw, 80px); line-height: 1;
+  padding-top: .1em; font-variant-numeric: tabular-nums;
+  transition: transform .08s ease, box-shadow .08s ease;
+}
+.choice:active { transform: translateY(4px); box-shadow: 0 2px 0 var(--line); }
+.choice.right { background: var(--good-bg); border-color: var(--good); color: var(--good); box-shadow: 0 6px 0 var(--good); animation: pop .35s ease; }
+.choice.wrong { background: var(--bad-bg); border-color: var(--bad); color: var(--bad); box-shadow: none; opacity: .55; transform: translateY(4px); animation: shake .4s ease; }
+
+.tools { display: flex; gap: 12px; align-items: center; min-height: 52px; }
+.hint-btn {
+  border: 2px solid var(--line); background: var(--card); border-radius: 999px;
+  padding: 10px 20px; font-weight: 800; font-size: 17px; color: var(--muted);
+}
+.cheer { font-family: var(--display); font-weight: 800; font-size: 28px; color: var(--good); }
+
+/* ten-frames */
+.frames { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; }
+.frame { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; padding: 6px; background: var(--card); border: 2px solid var(--ink); border-radius: 10px; }
+.cell { width: clamp(28px, 4.2vw, 40px); aspect-ratio: 1; border-radius: 5px; background: var(--paper); display: grid; place-items: center; position: relative; }
+.cell i { width: 78%; aspect-ratio: 1; border-radius: 50%; display: block; }
+.cell i.a { background: var(--coral); }
+.cell i.b { background: var(--teal); }
+.cell i.m { background: var(--ink); }
+.cell i.x { background: var(--ink); opacity: .22; }
+.cell i.x + s { position: absolute; inset: 0; display: grid; place-items: center; color: var(--bad); font: 800 28px/1 var(--display); text-decoration: none; }
+
+/* ---------- results ---------- */
+.done { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 18px; width: min(100%, 720px); }
+.done h1 { font-family: var(--display); font-size: clamp(40px, 7vw, 64px); margin: 0; line-height: 1.05; text-wrap: balance; }
+.done p { margin: 0; color: var(--muted); font-size: 20px; font-weight: 700; }
+.stars { display: flex; gap: 10px; }
+.stars svg { width: clamp(56px, 10vw, 84px); height: auto; }
+.missed { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.missed span { background: var(--card); border: 2px solid var(--line); border-radius: 12px; padding: 6px 14px; font: 700 24px/1.2 var(--display); }
+.row { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+.big-btn {
+  border: 0; border-radius: 18px; padding: 16px 28px; font: 800 24px/1 var(--display); padding-top: 20px;
+  background: var(--ink); color: #fff; box-shadow: 0 5px 0 #0d1427;
+}
+.big-btn.alt { background: var(--card); color: var(--ink); border: 3px solid var(--line); box-shadow: 0 5px 0 var(--line); }
+.big-btn:disabled { opacity: .4; }
+
+/* ---------- teacher sheet ---------- */
+.scrim { position: fixed; inset: 0; background: rgba(20, 28, 50, .45); z-index: 10; display: flex; align-items: flex-end; justify-content: center; }
+.sheet {
+  background: var(--card); width: min(100%, 760px); max-height: 92%; overflow-y: auto;
+  border-radius: 26px 26px 0 0; padding: 22px 24px calc(22px + env(safe-area-inset-bottom, 0px));
+  display: flex; flex-direction: column; gap: 22px; animation: rise .25s ease;
+}
+.sheet-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.sheet h2 { font-family: var(--display); font-size: 30px; margin: 0; line-height: 1.1; }
+.x-btn { border: 2px solid var(--line); background: var(--paper); border-radius: 12px; padding: 8px 14px; font-weight: 800; }
+.field { display: flex; flex-direction: column; gap: 10px; }
+.label { font-weight: 800; font-size: 14px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.note { font-size: 15px; color: var(--muted); margin: 0; }
+.nums { display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px; }
+@media (max-width: 560px) { .nums { grid-template-columns: repeat(5, 1fr); } }
+.num, .seg button {
+  border: 2px solid var(--line); background: var(--paper); border-radius: 14px; min-height: 56px;
+  font: 800 26px/1 var(--display); padding-top: 4px;
+}
+.num[aria-pressed="true"], .seg button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+.seg { display: flex; gap: 8px; flex-wrap: wrap; }
+.seg button { flex: 1; min-width: 72px; font-size: 21px; padding-inline: 12px; }
+.toggle { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; background: var(--paper); border-radius: 14px; border: 2px solid var(--line); text-align: left; width: 100%; }
+.toggle b { display: block; font-size: 18px; }
+.toggle small { color: var(--muted); font-size: 15px; font-weight: 600; }
+.switch { width: 58px; height: 34px; border-radius: 99px; background: var(--line); position: relative; flex: none; transition: background .2s; }
+.switch::after { content: ""; position: absolute; top: 4px; left: 4px; width: 26px; height: 26px; border-radius: 50%; background: #fff; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+.toggle[aria-checked="true"] .switch { background: var(--teal); }
+.toggle[aria-checked="true"] .switch::after { transform: translateX(24px); }
+.preview { background: var(--paper); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
+.preview b { font-size: 16px; }
+.preview span { font: 700 20px/1.4 var(--display); color: var(--ink); }
+
+@keyframes pop { 0% { transform: scale(.85); } 60% { transform: scale(1.08); } 100% { transform: scale(1); } }
+@keyframes shake { 0%,100% { translate: 0; } 20% { translate: -10px; } 40% { translate: 9px; } 60% { translate: -6px; } 80% { translate: 4px; } }
+@keyframes rise { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <b>Sums to Twenty</b>
+    <span id="focusLabel">Practising 8 and 9</span>
+  </div>
+  <button class="gear" id="gear" aria-label="Teacher settings (press and hold)">
+    <svg class="cog" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>
+    <svg class="ring" viewBox="0 0 56 56" aria-hidden="true"><circle cx="28" cy="28" r="26"/></svg>
+    <span class="gear-tip" id="gearTip">Hold for teacher settings</span>
+  </button>
+</header>
+<div class="beads" id="beads"></div>
+<main id="main"></main>
+<div class="scrim" id="scrim" hidden></div>
+
+<script>
+(() => {
+  const MINUS = "−";
+  const DEF = { focus: [8, 9], ops: "both", bridge: true, count: 10, choices: 4, sound: true };
+  const KEY = "sums-to-twenty-settings";
+  let S = loadSettings();
+  let round = [], idx = 0, locked = false, showHint = false;
+
+  const $ = (id) => document.getElementById(id);
+  const main = $("main"), beads = $("beads"), scrim = $("scrim");
+
+  function loadSettings() {
+    try {
+      const j = JSON.parse(localStorage.getItem(KEY));
+      if (j && Array.isArray(j.focus) && j.focus.length) return { ...DEF, ...j };
+    } catch (e) {}
+    return { ...DEF, focus: [...DEF.focus] };
+  }
+  function saveSettings() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+
+  const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+  // Every question uses one of the focus numbers. Subtraction comes from the same
+  // fact family: n + k = s  ->  s − n = k  and  s − k = n.
+  function buildPool(cfg) {
+    const pool = new Map();
+    const put = (a, op, b, ans) => { const key = a + op + b; if (!pool.has(key)) pool.set(key, { a, op, b, ans }); };
+    for (const n of cfg.focus) {
+      for (let k = 1; k <= 10; k++) {
+        const s = n + k;
+        if (s > 20 || (cfg.bridge && s <= 10)) continue;
+        if (cfg.ops !== "sub") { put(n, "+", k, s); put(k, "+", n, s); }
+        if (cfg.ops !== "add") { put(s, MINUS, n, k); put(s, MINUS, k, n); }
+      }
+    }
+    return [...pool.values()];
+  }
+
+  function makeRound(pool, count) {
+    let list = [];
+    while (list.length < count && pool.length) {
+      let batch = shuffle(pool);
+      const last = list[list.length - 1];
+      if (last && batch.length > 1 && batch[0] === last) batch.push(batch.shift());
+      list = list.concat(batch);
+    }
+    return list.slice(0, count).map((q) => ({ q, opts: makeOptions(q.ans, S.choices), tries: 0 }));
+  }
+
+  // Wrong answers a child might actually pick: one or two off, and ten off (forgot the ten).
+  function makeOptions(ans, n) {
+    const ok = (v) => v >= 0 && v <= 20 && v !== ans;
+    const near = shuffle([ans + 1, ans - 1, ans + 2, ans - 2].filter(ok));
+    const tens = shuffle([ans + 10, ans - 10].filter(ok));
+    const far = shuffle([ans + 3, ans - 3, ans + 4, ans - 4].filter(ok));
+    const ordered = [...near.slice(0, 2), ...tens, ...near.slice(2), ...far];
+    const picks = [...new Set(ordered)].slice(0, n - 1);
+    return shuffle([ans, ...picks]);
+  }
+
+  // ---------- sound ----------
+  let ac = null;
+  function tone(freqs, type = "sine", dur = 0.14, gain = 0.18) {
+    if (!S.sound) return;
+    try {
+      ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+      if (ac.state === "suspended") ac.resume();
+      freqs.forEach((f, i) => {
+        const o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime + i * dur * 0.9;
+        o.type = type; o.frequency.value = f;
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain, t + 0.02); g.gain.exponentialRampToValueAtTime(0.001, t + dur * 1.6);
+        o.connect(g).connect(ac.destination); o.start(t); o.stop(t + dur * 1.7);
+      });
+    } catch (e) {}
+  }
+  const yay = () => tone([660, 880, 1320], "triangle", 0.11);
+  const nope = () => tone([220, 180], "sine", 0.12, 0.14);
+  const fanfare = () => tone([523, 659, 784, 1047, 1319], "triangle", 0.13);
+
+  // ---------- rendering ----------
+  function listText(nums) {
+    const s = [...nums].sort((a, b) => a - b);
+    return s.length === 1 ? String(s[0]) : s.slice(0, -1).join(", ") + " and " + s[s.length - 1];
+  }
+  function opsText(ops) { return ops === "add" ? "adding" : ops === "sub" ? "taking away" : "adding and taking away"; }
+  function renderLabel() { $("focusLabel").textContent = `Practising ${listText(S.focus)} · ${opsText(S.ops)}`; }
+
+  function renderBeads() {
+    beads.innerHTML = round.map((r, i) => {
+      let c = "bead";
+      if (i < idx || (i === idx && r.done)) c += r.tries === 0 ? " ok" : " retry";
+      else if (i === idx) c += " now";
+      return `<span class="${c}"></span>`;
+    }).join("");
+  }
+
+  function frames(q) {
+    // Two ten-frames (20 cells). Addition: first number coral, then second number teal.
+    // Subtraction: the whole amount, with the part taken away crossed out from the end.
+    const cells = [];
+    if (q.op === "+") { for (let i = 0; i < 20; i++) cells.push(i < q.a ? "a" : i < q.a + q.b ? "b" : ""); }
+    else { for (let i = 0; i < 20; i++) cells.push(i < q.a - q.b ? "m" : i < q.a ? "x" : ""); }
+    const frame = (part) => `<div class="frame">${part.map((c) => `<div class="cell">${c ? `<i class="${c}"></i>${c === "x" ? "<s>×</s>" : ""}` : ""}</div>`).join("")}</div>`;
+    return `<div class="frames" aria-label="Ten-frame picture">${frame(cells.slice(0, 10))}${frame(cells.slice(10))}</div>`;
+  }
+
+  function renderQuestion() {
+    const r = round[idx], q = r.q;
+    locked = false;
+    main.innerHTML = `
+      <div class="count">Question ${idx + 1} of ${round.length}</div>
+      <div class="sum" aria-live="polite">
+        <span class="n1">${q.a}</span><span class="op">${q.op}</span><span class="n2">${q.b}</span><span class="op">=</span><span class="slot" id="slot">?</span>
+      </div>
+      <div class="choices c${r.opts.length}" id="choices">
+        ${r.opts.map((v) => `<button class="choice" data-v="${v}">${v}</button>`).join("")}
+      </div>
+      <div class="tools" id="tools">
+        <button class="hint-btn" id="hintBtn">${showHint ? "Hide the dots" : "Show me with dots"}</button>
+      </div>
+      ${showHint ? frames(q) : ""}`;
+    $("choices").addEventListener("click", onChoice);
+    $("hintBtn").addEventListener("click", () => { showHint = !showHint; renderQuestion(); });
+    renderBeads();
+  }
+
+  const CHEERS = ["Great job!", "Yes!", "You got it!", "Super!", "Brilliant!", "Well done!"];
+  function onChoice(e) {
+    const btn = e.target.closest(".choice");
+    if (!btn || locked || btn.disabled) return;
+    const r = round[idx], v = Number(btn.dataset.v);
+    if (v === r.q.ans) {
+      locked = true; r.done = true;
+      btn.classList.add("right");
+      const slot = $("slot"); slot.textContent = v; slot.classList.add("filled");
+      $("tools").innerHTML = `<span class="cheer">${CHEERS[Math.floor(Math.random() * CHEERS.length)]}</span>`;
+      renderBeads(); yay();
+      setTimeout(next, 1100);
+    } else {
+      r.tries++;
+      btn.classList.add("wrong"); btn.disabled = true;
+      nope();
+    }
+  }
+
+  function next() {
+    idx++; showHint = false;
+    if (idx < round.length) renderQuestion(); else renderDone();
+  }
+
+  const STAR = (on) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z" fill="${on ? "var(--sun)" : "var(--line)"}" stroke="${on ? "#E0A21C" : "var(--line)"}" stroke-width="1.2" stroke-linejoin="round"/></svg>`;
+
+  function renderDone() {
+    renderBeads();
+    const first = round.filter((r) => r.tries === 0).length, total = round.length;
+    const ratio = first / total;
+    const stars = ratio === 1 ? 3 : ratio >= 0.7 ? 2 : ratio >= 0.4 ? 1 : 0;
+    const title = stars === 3 ? "All correct first time!" : stars === 2 ? "Great work!" : stars === 1 ? "Good practice!" : "Keep going, you're learning!";
+    const missed = [...new Map(round.filter((r) => r.tries > 0).map((r) => [r.q.a + r.q.op + r.q.b, r.q])).values()];
+    main.innerHTML = `
+      <div class="done">
+        <div class="stars">${[0, 1, 2].map((i) => STAR(i < stars)).join("")}</div>
+        <h1>${title}</h1>
+        <p>${first} of ${total} right on the first try</p>
+        ${missed.length ? `<p>Tricky ones:</p><div class="missed">${missed.map((q) => `<span>${q.a} ${q.op} ${q.b} = ${q.ans}</span>`).join("")}</div>` : ""}
+        <div class="row">
+          <button class="big-btn" id="again">Play again</button>
+          ${missed.length ? `<button class="big-btn alt" id="tricky">Practise tricky ones</button>` : ""}
+        </div>
+      </div>`;
+    $("again").addEventListener("click", startRound);
+    if (missed.length) $("tricky").addEventListener("click", () => {
+      const list = shuffle(missed.concat(missed)).slice(0, Math.max(missed.length, Math.min(S.count, missed.length * 2)));
+      round = list.map((q) => ({ q, opts: makeOptions(q.ans, S.choices), tries: 0 }));
+      idx = 0; showHint = false; renderQuestion();
+    });
+    fanfare();
+  }
+
+  function startRound() {
+    round = makeRound(buildPool(S), S.count);
+    idx = 0; showHint = false;
+    renderLabel(); renderQuestion();
+  }
+
+  // ---------- teacher settings ----------
+  const gear = $("gear"), tip = $("gearTip");
+  let holdTimer = null, tipTimer = null;
+  function holdStart(e) {
+    e.preventDefault();
+    gear.classList.add("holding");
+    holdTimer = setTimeout(() => { holdEnd(); openSheet(); }, 900);
+  }
+  function holdEnd() {
+    if (holdTimer) {
+      clearTimeout(holdTimer); holdTimer = null;
+      if (!scrim.hidden) return;
+      tip.classList.add("show"); clearTimeout(tipTimer);
+      tipTimer = setTimeout(() => tip.classList.remove("show"), 1600);
+    }
+    gear.classList.remove("holding");
+  }
+  gear.addEventListener("pointerdown", holdStart);
+  ["pointerup", "pointerleave", "pointercancel"].forEach((t) => gear.addEventListener(t, holdEnd));
+  gear.addEventListener("contextmenu", (e) => e.preventDefault());
+  gear.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openSheet(); } });
+
+  let draft = null;
+  function openSheet() {
+    gear.classList.remove("holding"); tip.classList.remove("show");
+    draft = { ...S, focus: [...S.focus] };
+    scrim.hidden = false;
+    renderSheet();
+  }
+  function closeSheet() { scrim.hidden = true; scrim.innerHTML = ""; }
+
+  function seg(name, values, labels) {
+    return `<div class="seg" role="group">${values.map((v, i) => `<button data-set="${name}" data-v="${v}" aria-pressed="${String(draft[name]) === String(v)}">${labels ? labels[i] : v}</button>`).join("")}</div>`;
+  }
+  function toggle(name, title, sub) {
+    return `<button class="toggle" role="switch" data-toggle="${name}" aria-checked="${draft[name]}"><span><b>${title}</b><small>${sub}</small></span><span class="switch"></span></button>`;
+  }
+
+  function renderSheet() {
+    const pool = draft.focus.length ? buildPool(draft) : [];
+    const sample = shuffle(pool).slice(0, 5).map((q) => `${q.a} ${q.op} ${q.b}`).join(",  ");
+    scrim.innerHTML = `
+      <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+        <div class="sheet-head"><h2 id="sheetTitle">Teacher settings</h2><button class="x-btn" id="closeSheet">Close</button></div>
+        <div class="field">
+          <span class="label">Numbers to practise</span>
+          <div class="nums">${Array.from({ length: 10 }, (_, i) => i + 1).map((n) => `<button class="num" data-num="${n}" aria-pressed="${draft.focus.includes(n)}">${n}</button>`).join("")}</div>
+          <p class="note">Every question uses one of these numbers, for example 8 + 3, 9 + 7 or 16 ${MINUS} 9.</p>
+        </div>
+        <div class="field"><span class="label">Kind of sums</span>${seg("ops", ["add", "sub", "both"], ["Add +", `Take away ${MINUS}`, "Both"])}</div>
+        ${toggle("bridge", "Cross ten only", "Answers to adding are 11 to 20 (e.g. 8 + 5), not 8 + 1")}
+        <div class="field"><span class="label">Questions per round</span>${seg("count", [5, 10, 15, 20])}</div>
+        <div class="field"><span class="label">Answer choices</span>${seg("choices", [3, 4], ["3 choices", "4 choices"])}</div>
+        ${toggle("sound", "Sounds", "Chime for right answers, soft buzz for wrong ones")}
+        <div class="preview">
+          ${pool.length ? `<b>${pool.length} different questions, such as</b><span>${sample}</span>` : `<b>Pick at least one number to make questions.</b>`}
+        </div>
+        <button class="big-btn" id="startBtn" ${pool.length ? "" : "disabled"}>Start new round</button>
+      </div>`;
+  }
+
+  scrim.addEventListener("click", (e) => {
+    if (e.target === scrim || e.target.id === "closeSheet") return closeSheet();
+    const num = e.target.closest("[data-num]");
+    if (num) {
+      const n = Number(num.dataset.num);
+      draft.focus = draft.focus.includes(n) ? draft.focus.filter((x) => x !== n) : [...draft.focus, n].sort((a, b) => a - b);
+      return renderSheet();
+    }
+    const set = e.target.closest("[data-set]");
+    if (set) {
+      const k = set.dataset.set, v = set.dataset.v;
+      draft[k] = k === "ops" ? v : Number(v);
+      return renderSheet();
+    }
+    const tg = e.target.closest("[data-toggle]");
+    if (tg) { draft[tg.dataset.toggle] = !draft[tg.dataset.toggle]; return renderSheet(); }
+    if (e.target.id === "startBtn" && draft.focus.length) {
+      S = draft; saveSettings(); closeSheet(); startRound();
+    }
+  });
+
+  startRound();
+})();
+</script>
+</body>
+</html>
