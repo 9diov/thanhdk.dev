@@ -68,6 +68,12 @@ header {
 /* ---------- practice board ---------- */
 main { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: clamp(16px, 3.5vh, 36px); padding-block: 8px 24px; }
 .count { color: var(--muted); font-weight: 800; font-size: 16px; letter-spacing: .06em; text-transform: uppercase; }
+.timer { display: flex; align-items: center; gap: 12px; width: min(100%, 420px); }
+.timer-track { flex: 1; height: 14px; border-radius: 99px; background: var(--card); border: 2px solid var(--line); overflow: hidden; }
+.timer-fill { height: 100%; width: 100%; border-radius: 99px; background: var(--teal); transition: background .3s; }
+.timer.low .timer-fill { background: var(--coral); }
+.timer-secs { font: 800 22px/1 var(--display); min-width: 2ch; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; padding-top: 3px; }
+.timer.low .timer-secs { color: var(--coral); }
 .sum {
   font-family: var(--display); font-weight: 800; line-height: 1;
   font-size: clamp(64px, 13vw, 148px); display: flex; align-items: center; gap: .22em;
@@ -96,6 +102,9 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; align-item
 }
 .choice:active { transform: translateY(4px); box-shadow: 0 2px 0 var(--line); }
 .choice.right { background: var(--good-bg); border-color: var(--good); color: var(--good); box-shadow: 0 6px 0 var(--good); animation: pop .35s ease; }
+.choice.reveal { background: var(--good-bg); border-color: var(--good); color: var(--good); box-shadow: 0 6px 0 var(--good); }
+.slot.shown { border: .05em solid var(--sun); background: #FFF3D1; color: var(--ink); animation: pop .35s ease; }
+.oops { font-family: var(--display); font-weight: 800; font-size: 26px; color: var(--muted); }
 .choice.wrong { background: var(--bad-bg); border-color: var(--bad); color: var(--bad); box-shadow: none; opacity: .55; transform: translateY(4px); animation: shake .4s ease; }
 
 .tools { display: flex; gap: 12px; align-items: center; min-height: 52px; }
@@ -189,10 +198,11 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; align-item
 <script>
 (() => {
   const MINUS = "−";
-  const DEF = { focus: [8, 9], ops: "both", bridge: true, count: 10, choices: 4, sound: true };
+  const DEF = { focus: [8, 9], ops: "both", bridge: true, count: 10, choices: 4, sound: true, timer: 0 };
   const KEY = "sums-to-twenty-settings";
   let S = loadSettings();
   let round = [], idx = 0, locked = false, showHint = false;
+  let timeLeft = 0, lastTick = 0, rafId = 0;
 
   const $ = (id) => document.getElementById(id);
   const main = $("main"), beads = $("beads"), scrim = $("scrim");
@@ -271,7 +281,44 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; align-item
     return s.length === 1 ? String(s[0]) : s.slice(0, -1).join(", ") + " and " + s[s.length - 1];
   }
   function opsText(ops) { return ops === "add" ? "adding" : ops === "sub" ? "taking away" : "adding and taking away"; }
-  function renderLabel() { $("focusLabel").textContent = `Practising ${listText(S.focus)} · ${opsText(S.ops)}`; }
+  function renderLabel() { $("focusLabel").textContent = `Practising ${listText(S.focus)} · ${opsText(S.ops)}${S.timer ? ` · ${S.timer}s each` : ""}`; }
+
+  // ---------- question timer ----------
+  // Counts down with requestAnimationFrame. It pauses while the teacher sheet is open,
+  // and big frame gaps (tab hidden, device asleep) are clamped so time isn't lost.
+  function startTimer() {
+    stopTimer();
+    if (!S.timer) return;
+    timeLeft = S.timer * 1000; lastTick = performance.now();
+    rafId = requestAnimationFrame(tick);
+  }
+  function stopTimer() { cancelAnimationFrame(rafId); rafId = 0; }
+  function tick(now) {
+    const dt = Math.min(now - lastTick, 100);
+    lastTick = now;
+    if (scrim.hidden && !locked) timeLeft -= dt;
+    drawTimer();
+    if (timeLeft <= 0) return timeUp();
+    rafId = requestAnimationFrame(tick);
+  }
+  function drawTimer() {
+    const el = $("timer");
+    if (!el) return;
+    const t = Math.max(timeLeft, 0);
+    el.querySelector(".timer-fill").style.width = `${(t / (S.timer * 1000)) * 100}%`;
+    el.querySelector(".timer-secs").textContent = Math.ceil(t / 1000);
+    el.classList.toggle("low", t <= 3000);
+  }
+  function timeUp() {
+    stopTimer();
+    const r = round[idx];
+    locked = true; r.done = true; r.tries++;
+    const slot = $("slot"); slot.textContent = r.q.ans; slot.classList.add("shown");
+    $("choices").querySelectorAll(".choice").forEach((b) => { if (Number(b.dataset.v) === r.q.ans) b.classList.add("reveal"); });
+    $("tools").innerHTML = `<span class="oops">Time's up! It's ${r.q.ans}.</span>`;
+    renderBeads(); nope();
+    advanceAfter(2200);
+  }
 
   function renderBeads() {
     beads.innerHTML = round.map((r, i) => {
@@ -292,11 +339,13 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; align-item
     return `<div class="frames" aria-label="Ten-frame picture">${frame(cells.slice(0, 10))}${frame(cells.slice(10))}</div>`;
   }
 
-  function renderQuestion() {
+  // fresh = a new question (starts the timer); false = just redrawing, e.g. toggling the dots.
+  function renderQuestion(fresh = true) {
     const r = round[idx], q = r.q;
     locked = false;
     main.innerHTML = `
       <div class="count">Question ${idx + 1} of ${round.length}</div>
+      ${S.timer ? `<div class="timer" id="timer" role="timer" aria-label="Time left"><div class="timer-track"><div class="timer-fill"></div></div><span class="timer-secs"></span></div>` : ""}
       <div class="sum" aria-live="polite">
         <span class="n1">${q.a}</span><span class="op">${q.op}</span><span class="n2">${q.b}</span><span class="op">=</span><span class="slot" id="slot">?</span>
       </div>
@@ -308,8 +357,10 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; align-item
       </div>
       ${showHint ? frames(q) : ""}`;
     $("choices").addEventListener("click", onChoice);
-    $("hintBtn").addEventListener("click", () => { showHint = !showHint; renderQuestion(); });
+    $("hintBtn").addEventListener("click", () => { showHint = !showHint; renderQuestion(false); });
     renderBeads();
+    if (fresh) startTimer();
+    drawTimer();
   }
 
   const CHEERS = ["Great job!", "Yes!", "You got it!", "Super!", "Brilliant!", "Well done!"];
@@ -318,18 +369,21 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; align-item
     if (!btn || locked || btn.disabled) return;
     const r = round[idx], v = Number(btn.dataset.v);
     if (v === r.q.ans) {
-      locked = true; r.done = true;
+      locked = true; r.done = true; stopTimer();
       btn.classList.add("right");
       const slot = $("slot"); slot.textContent = v; slot.classList.add("filled");
       $("tools").innerHTML = `<span class="cheer">${CHEERS[Math.floor(Math.random() * CHEERS.length)]}</span>`;
       renderBeads(); yay();
-      setTimeout(next, 1100);
+      advanceAfter(1100);
     } else {
       r.tries++;
       btn.classList.add("wrong"); btn.disabled = true;
       nope();
     }
   }
+
+  // Skip the auto-advance if a new round was started in the meantime.
+  function advanceAfter(ms) { const cur = round, i = idx; setTimeout(() => { if (round === cur && idx === i) next(); }, ms); }
 
   function next() {
     idx++; showHint = false;
@@ -339,7 +393,7 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; align-item
   const STAR = (on) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z" fill="${on ? "var(--sun)" : "var(--line)"}" stroke="${on ? "#E0A21C" : "var(--line)"}" stroke-width="1.2" stroke-linejoin="round"/></svg>`;
 
   function renderDone() {
-    renderBeads();
+    stopTimer(); renderBeads();
     const first = round.filter((r) => r.tries === 0).length, total = round.length;
     const ratio = first / total;
     const stars = ratio === 1 ? 3 : ratio >= 0.7 ? 2 : ratio >= 0.4 ? 1 : 0;
@@ -424,6 +478,10 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; align-item
         ${toggle("bridge", "Cross ten only", "Answers to adding are 11 to 20 (e.g. 8 + 5), not 8 + 1")}
         <div class="field"><span class="label">Questions per round</span>${seg("count", [5, 10, 15, 20])}</div>
         <div class="field"><span class="label">Answer choices</span>${seg("choices", [3, 4], ["3 choices", "4 choices"])}</div>
+        <div class="field">
+          <span class="label">Time per question</span>${seg("timer", [0, 5, 10, 15, 20, 30], ["Off", "5s", "10s", "15s", "20s", "30s"])}
+          <p class="note">When time runs out the answer is shown and it goes on the tricky list.</p>
+        </div>
         ${toggle("sound", "Sounds", "Chime for right answers, soft buzz for wrong ones")}
         <div class="preview">
           ${pool.length ? `<b>${pool.length} different questions, such as</b><span>${sample}</span>` : `<b>Pick at least one number to make questions.</b>`}
